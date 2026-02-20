@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CleanlinessMeter } from "@/components/CleanlinessMeter";
 import { ChoreCard } from "@/components/ChoreCard";
 import { ChoreSheet } from "@/components/ChoreSheet";
@@ -9,56 +9,9 @@ import { FabButton } from "@/components/FabButton";
 import { Segmented } from "@/components/Segmented";
 import type { Frequency } from "@/lib/choreMath";
 import { dueStatus, freshness } from "@/lib/choreMath";
-import { uid } from "@/lib/id";
 import { parseAssigned } from "@/lib/parseAssigned";
-import type { Chore, Person, PersonKey } from "@/lib/types";
-
-const PEOPLE: Record<PersonKey, Person> = {
-  Porter: { key: "Porter", name: "Porter", initials: "P", color: "#4A80FF" },
-  Brickley: { key: "Brickley", name: "Brickley", initials: "B", color: "#8B5CF6" },
-};
-
-const initialChores: Chore[] = [
-  {
-    id: "bathroom",
-    title: "Clean Bathroom",
-    frequency: "WEEKLY",
-    lastDoneAt: new Date("2026-02-10T12:00:00.000Z"),
-    assignees: ["Porter", "Brickley"],
-    subtasks: [
-      { id: "t1", text: "Scrub tiles" },
-      { id: "t2", text: "Clean mirror" },
-      { id: "t3", text: "Empty trash" },
-      { id: "t4", text: "Bleach toilet" },
-    ],
-  },
-  {
-    id: "laundry",
-    title: "Laundry",
-    frequency: "WEEKLY",
-    lastDoneAt: new Date("2026-02-16T12:00:00.000Z"),
-    assignees: ["Brickley"],
-    subtasks: [
-      { id: "l1", text: "Gather clothes" },
-      { id: "l2", text: "Run washer" },
-      { id: "l3", text: "Run dryer" },
-      { id: "l4", text: "Fold + put away" },
-    ],
-  },
-  {
-    id: "mop",
-    title: "Mop Floors",
-    frequency: "WEEKLY",
-    lastDoneAt: null,
-    assignees: ["Porter"],
-    subtasks: [
-      { id: "m1", text: "Pick up clutter" },
-      { id: "m2", text: "Sweep" },
-      { id: "m3", text: "Mop" },
-      { id: "m4", text: "Let dry" },
-    ],
-  },
-];
+import { apiCompleteChore, apiCreateChore, apiDeleteChore, apiGetChores, apiGetPeople, apiUpdateChore } from "@/lib/api";
+import type { ApiChore, ApiPerson } from "@/lib/apiTypes";
 
 type Filter = "DUE" | "ALL" | "FRESH";
 
@@ -67,8 +20,32 @@ type EditorState =
   | { open: true; mode: "create"; editId: null }
   | { open: true; mode: "edit"; editId: string };
 
+type UiChore = {
+  id: string;
+  title: string;
+  frequency: Frequency;
+  lastDoneAt: Date | null;
+  assignees: ApiPerson[];
+  subtasks: { id: string; text: string }[];
+};
+
+const asUiChore = (c: ApiChore): UiChore => ({
+  id: c.id,
+  title: c.title,
+  frequency: c.frequency,
+  lastDoneAt: c.lastDoneAt ? new Date(c.lastDoneAt) : null,
+  assignees: c.assignees,
+  subtasks: c.subtasks
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((s) => ({ id: s.id, text: s.text })),
+});
+
 export default function Home() {
-  const [chores, setChores] = useState<Chore[]>(initialChores);
+  const [people, setPeople] = useState<ApiPerson[] | null>(null);
+  const [chores, setChores] = useState<UiChore[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const [openId, setOpenId] = useState<string | null>(null);
   const [checkedByChore, setCheckedByChore] = useState<Record<string, Set<string>>>({});
 
@@ -81,22 +58,46 @@ export default function Home() {
     subtasksText: "",
   });
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [p, c] = await Promise.all([apiGetPeople(), apiGetChores()]);
+        if (!alive) return;
+        setPeople(p);
+        setChores(c.map(asUiChore));
+        setError(null);
+      } catch (e) {
+        if (!alive) return;
+        setError(e instanceof Error ? e.message : "failed to load");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const porter = people?.find((x) => x.name === "Porter") ?? null;
+  const brickley = people?.find((x) => x.name === "Brickley") ?? null;
+
   const now = useMemo(() => new Date(), []);
 
   const meter = useMemo(() => {
-    const values = chores.map((c) => freshness(now, c.lastDoneAt, c.frequency));
+    const list = chores ?? [];
+    const values = list.map((c) => freshness(now, c.lastDoneAt, c.frequency));
     const avg = values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
     return Math.round(avg * 100);
   }, [chores, now]);
 
   const sorted = useMemo(() => {
+    const list = chores ?? [];
     const rank = (s: ReturnType<typeof dueStatus>) => {
       if (s === "OVERDUE") return 0;
       if (s === "DUE") return 1;
       return 2;
     };
 
-    return [...chores].sort((a, b) => {
+    return [...list].sort((a, b) => {
       const sa = dueStatus(now, a.lastDoneAt, a.frequency);
       const sb = dueStatus(now, b.lastDoneAt, b.frequency);
       const ra = rank(sa);
@@ -109,7 +110,7 @@ export default function Home() {
   const visible = useMemo(() => {
     if (filter === "ALL") return sorted;
 
-    const isDueLike = (c: Chore) => {
+    const isDueLike = (c: UiChore) => {
       const st = dueStatus(now, c.lastDoneAt, c.frequency);
       return st === "OVERDUE" || st === "DUE";
     };
@@ -118,7 +119,7 @@ export default function Home() {
     return sorted.filter((c) => !isDueLike(c));
   }, [sorted, filter, now]);
 
-  const active = openId ? chores.find((c) => c.id === openId) ?? null : null;
+  const active = openId ? (chores ?? []).find((c) => c.id === openId) ?? null : null;
   const checked = active ? checkedByChore[active.id] ?? new Set<string>() : new Set<string>();
 
   const toggle = (subtaskId: string) => {
@@ -133,13 +134,14 @@ export default function Home() {
     });
   };
 
-  const finish = () => {
+  const finish = async () => {
     if (!active) return;
     const total = active.subtasks.length;
     const done = checkedByChore[active.id]?.size ?? 0;
     if (done !== total) return;
 
-    setChores((prev) => prev.map((c) => (c.id === active.id ? { ...c, lastDoneAt: new Date() } : c)));
+    const r = await apiCompleteChore(active.id);
+    setChores((prev) => (prev ?? []).map((c) => (c.id === active.id ? { ...c, lastDoneAt: r.lastDoneAt ? new Date(r.lastDoneAt) : new Date() } : c)));
     setCheckedByChore((prev) => ({ ...prev, [active.id]: new Set<string>() }));
     setOpenId(null);
   };
@@ -154,62 +156,57 @@ export default function Home() {
     setEditor({ open: true, mode: "create", editId: null });
   };
 
-  const openEdit = (c: Chore) => {
+  const openEdit = (c: UiChore) => {
     setDraft({
       title: c.title,
       frequency: c.frequency,
-      assignees: { porter: c.assignees.includes("Porter"), brickley: c.assignees.includes("Brickley") },
+      assignees: {
+        porter: !!porter && c.assignees.some((a) => a.id === porter.id),
+        brickley: !!brickley && c.assignees.some((a) => a.id === brickley.id),
+      },
       subtasksText: c.subtasks.map((s) => s.text).join("\n"),
     });
     setEditor({ open: true, mode: "edit", editId: c.id });
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     const parsed = parseAssigned(draft.title);
     const title = parsed.title;
 
-    const porter = draft.assignees.porter || parsed.porter;
-    const brickley = draft.assignees.brickley || parsed.brickley;
+    const porterOn = draft.assignees.porter || parsed.porter;
+    const brickleyOn = draft.assignees.brickley || parsed.brickley;
 
-    const assignees: PersonKey[] = [
-      ...(porter ? (["Porter"] as const) : []),
-      ...(brickley ? (["Brickley"] as const) : []),
+    const assigneeIds = [
+      ...(porterOn && porter ? [porter.id] : []),
+      ...(brickleyOn && brickley ? [brickley.id] : []),
     ];
 
-    const subtasks = splitSubtasks(draft.subtasksText).map((t, i) => ({ id: `s-${uid()}-${i}`, text: t }));
+    const subtasks = splitSubtasks(draft.subtasksText).map((t) => ({ text: t }));
 
     if (title.trim().length === 0) return;
-    if (assignees.length === 0) return;
+    if (assigneeIds.length === 0) return;
     if (subtasks.length === 0) return;
 
     if (editor.open && editor.mode === "create") {
-      const id = `c-${uid()}`;
-      const next: Chore = {
-        id,
-        title,
-        frequency: draft.frequency,
-        lastDoneAt: null,
-        assignees,
-        subtasks,
-      };
-      setChores((prev) => [next, ...prev]);
-      setCheckedByChore((prev) => ({ ...prev, [id]: new Set<string>() }));
+      const created = await apiCreateChore({ title, frequency: draft.frequency, assigneeIds, subtasks });
+      setChores((prev) => [asUiChore(created), ...(prev ?? [])]);
       setEditor({ open: false });
       return;
     }
 
     if (editor.open && editor.mode === "edit" && editor.editId) {
-      const id = editor.editId;
-      setChores((prev) => prev.map((c) => (c.id === id ? { ...c, title, frequency: draft.frequency, assignees, subtasks } : c)));
-      setCheckedByChore((prev) => ({ ...prev, [id]: new Set<string>() }));
+      const updated = await apiUpdateChore(editor.editId, { title, frequency: draft.frequency, assigneeIds, subtasks });
+      setChores((prev) => (prev ?? []).map((c) => (c.id === editor.editId ? asUiChore(updated) : c)));
+      setCheckedByChore((prev) => ({ ...prev, [editor.editId]: new Set<string>() }));
       setEditor({ open: false });
     }
   };
 
-  const deleteActive = () => {
+  const deleteActive = async () => {
     if (!(editor.open && editor.mode === "edit" && editor.editId)) return;
     const id = editor.editId;
-    setChores((prev) => prev.filter((c) => c.id !== id));
+    await apiDeleteChore(id);
+    setChores((prev) => (prev ?? []).filter((c) => c.id !== id));
     setCheckedByChore((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -226,10 +223,17 @@ export default function Home() {
             <div className="text-xl font-semibold tracking-tight">Chore Board</div>
             <div className="text-xs text-[rgba(45,41,38,0.6)]">Overdue → Due → Fresh</div>
           </div>
-          <div className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-[var(--shadow)]">
-            P + B
-          </div>
+          <div className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-[var(--shadow)]">P + B</div>
         </div>
+
+        {error ? (
+          <div className="rounded-[24px] bg-white p-4 text-xs text-[color:var(--terracotta)] shadow-[var(--shadow)]">
+            {error}
+            <div className="mt-2 text-[rgba(45,41,38,0.55)]">
+              Postgres isn’t set up yet, or the API can’t connect.
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-4 flex items-center justify-between">
           <Segmented
@@ -257,7 +261,7 @@ export default function Home() {
                 key={c.id}
                 title={c.title}
                 status={st}
-                assignees={c.assignees.map((k) => ({ initials: PEOPLE[k].initials, color: PEOPLE[k].color }))}
+                assignees={c.assignees.map((a) => ({ initials: a.initials, color: a.color }))}
                 subtasksDone={set.size}
                 subtasksTotal={c.subtasks.length}
                 onClick={() => setOpenId(c.id)}
@@ -267,9 +271,11 @@ export default function Home() {
           })}
         </div>
 
-        <div className="mt-6 rounded-[24px] bg-white p-4 text-xs text-[rgba(45,41,38,0.65)] shadow-[var(--shadow)]">
-          MVP mode: this screen is using mock data. Next step is wiring Postgres + Prisma and persisting chores.
-        </div>
+        {people === null || chores === null ? (
+          <div className="mt-6 rounded-[24px] bg-white p-4 text-xs text-[rgba(45,41,38,0.65)] shadow-[var(--shadow)]">
+            Loading from database…
+          </div>
+        ) : null}
       </div>
 
       {active ? (
@@ -282,6 +288,7 @@ export default function Home() {
           subtasks={active.subtasks}
           checkedIds={checked}
           toggle={toggle}
+          completedBy={null}
           onFinish={finish}
         />
       ) : null}

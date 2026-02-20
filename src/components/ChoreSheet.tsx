@@ -13,6 +13,7 @@ type Props = {
   subtasks: { id: string; text: string }[];
   checkedIds: Set<string>;
   toggle: (id: string) => void;
+  completedBy?: { id: string; name: string } | null;
   onFinish: () => void;
 };
 
@@ -25,6 +26,7 @@ export function ChoreSheet({
   subtasks,
   checkedIds,
   toggle,
+  completedBy,
   onFinish,
 }: Props) {
   const doneCount = Array.from(checkedIds).length;
@@ -60,6 +62,7 @@ export function ChoreSheet({
                 <div className="truncate text-lg font-semibold">{title}</div>
                 <div className="mt-1 text-xs text-[rgba(45,41,38,0.6)]">
                   {lastDoneAt ? `Last done: ${formatShortDateTime(lastDoneAt)}` : "Never completed"}
+                  {completedBy ? ` · by ${completedBy.name}` : ""}
                   {due ? ` · Next due: ${formatShortDateTime(due)}` : ""}
                 </div>
               </div>
