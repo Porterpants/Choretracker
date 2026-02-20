@@ -24,9 +24,14 @@ export function ChoreCard({
   onEdit,
 }: Props) {
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="group w-full rounded-[24px] bg-white p-4 text-left shadow-[var(--shadow)] transition-transform active:scale-[0.99]"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onClick();
+      }}
+      className="group w-full cursor-pointer rounded-[24px] bg-white p-4 text-left shadow-[var(--shadow)] transition-transform active:scale-[0.99]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -70,6 +75,6 @@ export function ChoreCard({
           />
         </div>
       </div>
-    </button>
+    </div>
   );
 }

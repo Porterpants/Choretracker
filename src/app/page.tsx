@@ -23,7 +23,7 @@ const initialChores: Chore[] = [
     id: "bathroom",
     title: "Clean Bathroom",
     frequency: "WEEKLY",
-    lastDoneAt: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000),
+    lastDoneAt: new Date("2026-02-10T12:00:00.000Z"),
     assignees: ["Porter", "Brickley"],
     subtasks: [
       { id: "t1", text: "Scrub tiles" },
@@ -36,7 +36,7 @@ const initialChores: Chore[] = [
     id: "laundry",
     title: "Laundry",
     frequency: "WEEKLY",
-    lastDoneAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    lastDoneAt: new Date("2026-02-16T12:00:00.000Z"),
     assignees: ["Brickley"],
     subtasks: [
       { id: "l1", text: "Gather clothes" },
