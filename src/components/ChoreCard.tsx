@@ -11,6 +11,7 @@ type Props = {
   subtasksTotal: number;
   assignees: Assignee[];
   onClick: () => void;
+  onEdit?: () => void;
 };
 
 export function ChoreCard({
@@ -20,6 +21,7 @@ export function ChoreCard({
   subtasksTotal,
   assignees,
   onClick,
+  onEdit,
 }: Props) {
   return (
     <button
@@ -33,7 +35,20 @@ export function ChoreCard({
             Checklist: <span className="font-semibold text-[color:var(--espresso)]">{subtasksDone}/{subtasksTotal}</span>
           </div>
         </div>
-        <DueBadge status={status} />
+        <div className="flex items-center gap-2">
+          {onEdit ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="rounded-full bg-[rgba(45,41,38,0.06)] px-2.5 py-1 text-[11px] font-semibold text-[rgba(45,41,38,0.8)]"
+            >
+              Edit
+            </button>
+          ) : null}
+          <DueBadge status={status} />
+        </div>
       </div>
 
       <div className="mt-4 flex items-center justify-between">
