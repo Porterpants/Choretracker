@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model Person {
+  id       String @id @default(cuid())
+  name     String @unique
+  initials String
+  color    String
+
+  chores     ChoreAssignee[]
+  completed  Completion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Chore {
+  id         String    @id @default(cuid())
+  title      String
+  frequency  Frequency
+  lastDoneAt DateTime?
+
+  assignees   ChoreAssignee[]
+  subtasks    Subtask[]
+  completions Completion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([frequency])
+  @@index([lastDoneAt])
+}
+
+model ChoreAssignee {
+  choreId  String
+  personId String
+
+  chore  Chore  @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@id([choreId, personId])
+  @@index([personId])
+}
+
+model Subtask {
+  id      String @id @default(cuid())
+  choreId String
+  text    String
+  order   Int
+
+  chore Chore @relation(fields: [choreId], references: [id], onDelete: Cascade)
+
+  @@index([choreId])
+  @@unique([choreId, order])
+}
+
+model Completion {
+  id          String   @id @default(cuid())
+  choreId     String
+  completedAt DateTime @default(now())
+
+  completedByPersonId String?
+  completedByPerson   Person? @relation(fields: [completedByPersonId], references: [id], onDelete: SetNull)
+
+  chore Chore @relation(fields: [choreId], references: [id], onDelete: Cascade)
+
+  @@index([choreId, completedAt])
+}

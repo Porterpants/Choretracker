@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: choretracker-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: choretracker
+      POSTGRES_USER: choretracker
+      POSTGRES_PASSWORD: choretracker_dev_pw
+    ports:
+      - "5432:5432"
+    volumes:
+      - choretracker_pg:/var/lib/postgresql/data
+
+volumes:
+  choretracker_pg:
